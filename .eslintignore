@@ -1,0 +1,11 @@
+ node_modules/
+ public/
+ es/
+ lib/
+ dist/
+ docs/
+ src/assets/
+ package.json
+ .eslintrc.cjs
+ .eslintrc.js
+ *.eslintrc
