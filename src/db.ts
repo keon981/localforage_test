@@ -16,7 +16,7 @@ export const initDB = (): Promise<boolean> => {
   return new Promise((resolve) => {
     request = indexedDB.open('newDB')
 
-    request.onupgradeneeded = (res) => {
+    request.onupgradeneeded = () => {
       db = request.result
       if (!db.objectStoreNames.contains(Stores.Users)) {
         console.log('create users store')
