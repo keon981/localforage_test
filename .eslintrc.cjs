@@ -51,6 +51,7 @@ module.exports = {
   },
   ignorePatterns: ['.eslintrc.cjs', '*.config.ts', '*/*/setup.ts'],
   rules: {
+    'max-len': ['error', { code: 120 }],
     '@typescript-eslint/semi': ['error', 'never'],
     'import/no-absolute-path': 'off',
     'linebreak-style': 'off',
