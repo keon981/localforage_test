@@ -11,7 +11,9 @@ import * as cornerstoneWADOImageLoader from 'cornerstone-wado-image-loader'
 // import cornerstoneBase64ImageLoader from 'cornerstone-base64-image-loader'
 import dicomParser from 'dicom-parser'
 import localforage from 'localforage'
-import { encode, decode } from 'base64-arraybuffer-es6'
+import { wrap } from 'comlink'
+import type { saveinIDB } from 'src/utils/worker/loadDicom.worker'
+import LocalDicom from 'src/utils/worker/loadDicom.worker?worker'
 import { mask } from '../utils/mask'
 import { createImageObject } from '../utils/getImageFrame'
 
@@ -53,12 +55,12 @@ type ResponeImage = cornerstone.Image & {
 const baseUrl = 'wadouri:'
 const api = 'https://dev.label.efai.tw/api/viewer'
 
+const saveImage = wrap<typeof saveinIDB>(new LocalDicom())
+
 function CornerstoneElement({ stack }: Props) {
   const elementRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const renderer = new cornerstoneTools.stackRenderers.FusionRenderer()
-  const [newImage, setNewImage] = useState({})
-  const [images, setImages] = useState({})
   const dicomStack = {
     imageIds: [stack.imageIds[0]],
     currentImageIdIndex: 0,
@@ -69,33 +71,13 @@ function CornerstoneElement({ stack }: Props) {
     },
   }
 
-  const base64ToBlob = (base64String: string) => {
-    return new Promise((resolve, reject) => {
-      const file = new File([base64String], 'image.dicom', { type: 'image/dicom' })
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        if (e.target) {
-          resolve(e.target.result)
-        } else {
-          reject(new Error('no e.target'))
-        }
-      }
-      reader.readAsDataURL(file)
-    })
-  }
-
   renderer.findImageFn = (imageIds: string[]) => imageIds[0]
 
-  const loadBase64Image: cornerstone.ImageLoader = (imageId: string) => {
-    const base64 = imageId.replace('base64://', '')
-    const arrayBuffer = decode(base64)
-    const byteArray = new Uint8Array(arrayBuffer)
-
+  const loadByteArraymage = (byteArray: Uint8Array) => {
     const promise = new Promise<cornerstone.Image>((resolve, reject) => {
       const dataSet = dicomParser.parseDicom(byteArray)
       const image = createImageObject(dataSet)
       if (image) {
-        setImages(image)
         resolve(image)
       } else {
         reject(new Error('create Image error'))
@@ -107,8 +89,6 @@ function CornerstoneElement({ stack }: Props) {
     }
   }
 
-  cornerstone.registerImageLoader('base64://', loadBase64Image)
-
   const init = (id: string) => {
     if (!elementRef.current) return
     const renderRef = elementRef.current
@@ -118,27 +98,25 @@ function CornerstoneElement({ stack }: Props) {
 
     cornerstone
       .loadAndCacheImage(`${baseUrl}${id}`)
-      .then(async (image) => {
+      .then(async (image: any) => {
         console.log('updateImage---', image)
         cornerstone.displayImage(renderRef, image)
       })
-      .catch((err) => console.warn('image--- err', err))
+      .catch((err: any) => console.warn('image--- err', err))
 
     // cornerstone.getca
   }
 
-  const getDBImage = (itemName: string): Promise<string | null> => localforage.getItem(itemName)
-    .then((res) => (res ? `${res}` : null))
+  const getDBImage = (itemName: string): Promise<Uint8Array | null> => localforage.getItem(itemName)
+    .then((res) => (res as Uint8Array || null))
     .catch((err) => {
       throw err
     })
 
-  const setWadoBase64Image = async (element: HTMLElement, base64: string) => {
+  const setWadoBase64Image = async (element: HTMLElement, byteArray: Uint8Array) => {
     try {
       // const image = await cornerstone.loadImage(`base64://${base64}`)
-      const image = await loadBase64Image(`base64://${base64}`).promise
-      console.log('setWadoBase64Image--+--', image)
-
+      const image = await loadByteArraymage(byteArray).promise
       cornerstone.displayImage(element, image)
       // cornerstone.updateImage(element)
     } catch (error) {
@@ -146,44 +124,17 @@ function CornerstoneElement({ stack }: Props) {
     }
   }
 
-  const setImage = (element: HTMLElement) => {
-    cornerstone
-      .loadAndCacheImage(`${stack.imageIds[0]}`)
-      .then(async (image) => {
-        const newImage = {
-          imageId: image.imageId,
-          getPixelData: () => image.getPixelData(),
-          color: false,
-          floatPixelData: undefined,
-          invert: true,
-          intercept: 0,
-          rgba: false,
-          maxPixelValue: 4095,
-          minPixelValue: 0,
-          slope: 1,
-          windowCenter: 2047.5,
-          windowWidth: 4095,
-          columnPixelSpacing: 0.1,
-          rowPixelSpacing: 0.1,
-          columns: 2460,
-          width: 2460,
-          rows: 2970,
-          height: 2970,
-          sizeInBytes: 14612400,
-        }
-        setNewImage(newImage)
-
-        // cornerstone.displayImage(element, newImage)
-        // cornerstone.updateImage(element)
-
-        const { byteArray } = image.data
-        const base64 = encode(byteArray)
-        // setWadoBase64Image(element, base64)
-
-        await localforage.setItem('02', base64)
-      }).catch((err) => {
-        console.error('err----------', err)
-      })
+  const setImage = async (element: HTMLElement) => {
+    try {
+      const image = await cornerstone.loadAndCacheImage(`${stack.imageIds[0]}`)
+      cornerstone.displayImage(element, image)
+      cornerstone.updateImage(element)
+      const { byteArray } = image.data
+      const msg = await saveImage(`${stack.imageIds[0]}`, image.data.byteArray)
+      console.log(msg)
+    } catch (error) {
+      console.error('err----------', error)
+    }
   }
 
   const setBase64Image = (element: HTMLElement) => {
@@ -207,6 +158,19 @@ function CornerstoneElement({ stack }: Props) {
       })
   }
 
+  const preloadDicom = async (element: HTMLElement) => {
+    try {
+      const image = await cornerstone.loadImage(`${stack.imageIds[0]}`)
+      const msg = await saveImage(`${stack.imageIds[0]}`, image.data.byteArray)
+      cornerstone.displayImage(element, image)
+      cornerstone.updateImage(element)
+      // await localforage.setItem('dicom', byteArray)
+      console.log(msg)
+    } catch (error) {
+      console.error('err----------', error)
+    }
+  }
+
   useEffect(() => {
     console.clear()
     console.log('-----------------------');
@@ -218,20 +182,19 @@ function CornerstoneElement({ stack }: Props) {
       cornerstone.enable(element, {
         renderer: 'webgl',
       })
-      const base64 = await getDBImage('02')
-      if (base64) {
+
+      const byteArray = await getDBImage('dicom')
+      if (byteArray) {
         // setBase64Image(element)
-        setWadoBase64Image(element, base64)
-        setImage(element)
+        console.log('這邊')
+        preloadDicom(element)
+        // setWadoBase64Image(element, byteArray)
       } else {
+        console.log('那邊')
         setImage(element)
       }
     }())
   }, [stack.imageIds])
-
-  useEffect(() => {
-    console.table([images, newImage])
-  }, [images, newImage])
 
   return (
     <div>
