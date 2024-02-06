@@ -1,7 +1,7 @@
 /* eslint-disable no-bitwise */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable no-console */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 
 import * as cornerstone from 'cornerstone-core'
 import * as cornerstoneMath from 'cornerstone-math'
@@ -12,7 +12,7 @@ import * as cornerstoneWADOImageLoader from 'cornerstone-wado-image-loader'
 import dicomParser from 'dicom-parser'
 import localforage from 'localforage'
 import { wrap } from 'comlink'
-import type { saveinIDB } from 'src/utils/worker/loadDicom.worker'
+// import type { saveinIDB } from 'src/utils/worker/loadDicom.worker'
 import LocalDicom from 'src/utils/worker/loadDicom.worker?worker'
 import { mask } from '../utils/mask'
 import { createImageObject } from '../utils/getImageFrame'
@@ -45,11 +45,6 @@ type Stack = {
 
 type Props = {
   stack: Stack
-}
-
-type ResponeImage = cornerstone.Image & {
-  data: any
-  imageFrame: any
 }
 
 const baseUrl = 'wadouri:'

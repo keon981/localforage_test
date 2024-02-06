@@ -1,7 +1,8 @@
 /* eslint-disable max-len */
 import { useState } from 'react'
-import WebWokerPage from './pages/WebWokerPage'
-import CornerstoneElement from './pages/CornerStoneApp'
+// import WebWokerPage from './pages/WebWokerPage'
+// import CornerstoneElement from './pages/CornerStoneApp'
+import WorkerIDBApp from './pages/WorkerIDBApp'
 // import { smallBase64 } from './assets/base64/small'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 // import { wadoDcm } from './assets/base64/wado_dcm'
@@ -27,17 +28,18 @@ function App() {
     <>
       {/* <img src={`data:image/png;base64, ${wadoDcm}`}
        alt="" style={{ height: '1000px', width: '1000px' }} /> */}
-      <div style={{
+      {/* <div style={{
         marginBottom: '1rem',
         textAlign: 'center',
       }}
       >
         <button type="button" onClick={handleChange}>change</button>
-      </div>
+      </div> */}
       {/* <div className="ani" /> */}
-      <CornerstoneElement stack={stack} />
+      {/* <CornerstoneElement stack={stack} /> */}
       {/* <ImageToBase64 imageURL={dicomuri} /> */}
       {/* <WebWokerPage /> */}
+
     </>
   )
 }
