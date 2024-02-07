@@ -5,13 +5,18 @@ function NewApp() {
   const [changeDom, setChangeDom] = useState(false)
   return (
     <>
-      <button
-        type="button"
-        onClick={() => {
-          setChangeDom(!changeDom)
-        }}
-      > change
-      </button>
+      <p>
+        <button
+          type="button"
+          onClick={() => {
+            setChangeDom(!changeDom)
+          }}
+        >
+          {
+            changeDom ? 'End' : 'Start'
+          }
+        </button>
+      </p>
       {
         changeDom
           ? <WorkerIDBApp />

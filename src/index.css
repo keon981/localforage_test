@@ -35,7 +35,11 @@ h1 {
     font-size: 3.2em;
     line-height: 1.1;
 }
-
+:is(p):has(button),
+h2,
+form {
+    text-align: center;
+}
 button {
     border-radius: 8px;
     border: 1px solid transparent;
@@ -43,7 +47,7 @@ button {
     font-size: 1em;
     font-weight: 500;
     font-family: inherit;
-    background-color: #1a1a1a;
+    background-color: #646cff;
     cursor: pointer;
     transition: border-color 0.25s;
 }
@@ -87,4 +91,11 @@ button:focus-visible {
     animation-fill-mode: forwards;
     animation-delay: 0s;
     animation-iteration-count: infinite;
+}
+
+form {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 2rem;
 }

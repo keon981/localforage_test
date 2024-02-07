@@ -1,7 +1,9 @@
 /* eslint-disable no-bitwise */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable no-console */
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import {
+  useEffect, useLayoutEffect, useRef, useState,
+} from 'react'
 
 import * as cornerstone from 'cornerstone-core'
 import * as cornerstoneMath from 'cornerstone-math'
@@ -15,7 +17,7 @@ import {
 } from 'src/utils/API'
 import type { Dicom } from 'src/utils/API'
 import localforage from 'localforage'
-import { createImageObject } from 'src/utils/getImageFrame'
+// import { loadByteArrayImage } from 'src/utils/getImageFrame'
 import { saveImageToIDB } from 'src/utils/IDB'
 
 cornerstoneWebImageLoader.external.cornerstone = cornerstone
@@ -27,16 +29,27 @@ cornerstoneTools.external.Hammer = Hammer
 cornerstoneTools.external.cornerstone = cornerstone
 cornerstoneTools.external.cornerstoneMath = cornerstoneMath
 
-const workerList = 87760
+const workerList = 87759
 const loadingTime = 50
 
+type Image = cornerstone.Image & {
+  data: any
+}
+type PromiseArray<T> = Promise<T>[]
+type Stack = {
+  currentImageIdIndex: number;
+  imageIds: string[];
+}
 // save image worker
 
 function WorkerIDBApp() {
+  const rangeRef = useRef<HTMLInputElement>(null)
   const elementRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const renderer = new cornerstoneTools.stackRenderers.FusionRenderer()
-  renderer.findImageFn = (imageIds: string[]) => imageIds[0]
+  const [imageIndex, setImageIndex] = useState<number>(0)
+  const [imagesUrl, setImagesUrl] = useState<string[]>([])
+
+  const rangeMax = imagesUrl.length - 1
 
   const getDicomList = async (id: string | number): Promise<Dicom[]> => {
     try {
@@ -52,23 +65,7 @@ function WorkerIDBApp() {
     }
   }
 
-  const loadByteArrayImage = (byteArray: Uint8Array) => {
-    const promise = new Promise<cornerstone.Image>((resolve, reject) => {
-      const dataSet = dicomParser.parseDicom(byteArray)
-      const image = createImageObject(dataSet)
-      if (image) {
-        resolve(image)
-      } else {
-        reject(new Error('create Image error'))
-      }
-    })
-
-    return {
-      promise,
-    }
-  }
-
-  const displayImage = async (image: cornerstone.Image) => {
+  const displayImage = async (image: Image | cornerstone.Image) => {
     const element = elementRef.current as HTMLElement
     cornerstone.enable(element)
     cornerstone.displayImage(element, image)
@@ -77,7 +74,7 @@ function WorkerIDBApp() {
 
   const preloadImage = async (dicom: Dicom) => {
     try {
-      const image = await cornerstone.loadImage(`wadouri:${dicom.image_url}`)
+      const image = await cornerstone.loadImage(`wadouri:${dicom.image_url}`) as Image
       const { byteArray } = image.data
       // console.log(byteArray)
 
@@ -88,7 +85,7 @@ function WorkerIDBApp() {
     }
   }
 
-  // const setImage = async (imageUrl: string, index: number): Promise<cornerstone.Image> => {
+  // const setImage = async (imageUrl: string, index: number): Promise<Image> => {
   //   try {
   //     const byteArray = await localforage.getItem(imageUrl) as Uint8Array
   //     const image = await loadByteArrayImage(byteArray).promise
@@ -102,11 +99,23 @@ function WorkerIDBApp() {
   //   }
   // }
 
-  const setImage = async (imageUrl: string, index: number): Promise<cornerstone.Image | string> => {
+  const addStack = (stack: Stack) => {
+    const element = elementRef.current as HTMLElement
+    cornerstoneTools.init()
+    cornerstoneTools.addStackStateManager(element, ['stack'])
+    cornerstoneTools.addToolState(element, 'stack', stack)
+    const { StackScrollMouseWheelTool } = cornerstoneTools
+    cornerstoneTools.addTool(StackScrollMouseWheelTool)
+    cornerstoneTools.setToolActive('StackScrollMouseWheel', {})
+  }
+
+  const setImage = async (imageUrl: string, index: number): Promise<Image | string> => {
     try {
-      const image = await cornerstone.loadImage(`wadouri:${imageUrl}`)
+      const image = await cornerstone.loadImage(`wadouri:${imageUrl}`) as Image
       const { byteArray } = image.data
-      if (index === 0) displayImage(image)
+      if (index === 0) {
+        displayImage(image)
+      }
       await saveImageToIDB(imageUrl, byteArray)
       return image
     } catch (error) {
@@ -116,25 +125,31 @@ function WorkerIDBApp() {
 
   const getAllImage = async (dicomList: Dicom[]): Promise<void> => {
     if (!dicomList.length) throw new Error('undefine DICOM')
-
     try {
-      const loadPromises: (Promise<cornerstone.Image | string>)[] = []
-      // eslint-disable-next-line array-callback-return
-      dicomList.forEach(({ image_url }, index) => {
-        setTimeout(async () => {
-          loadPromises.push(setImage(image_url, index))
-        }, index * loadingTime)
+      const imageIds = dicomList.map(({ image_url }) => `wadouri:${image_url}`)
+      const stack: Stack = {
+        currentImageIdIndex: 0,
+        imageIds,
+      }
+      setImagesUrl(imageIds)
+      const loadPromises: PromiseArray<Image | string> = dicomList.map(({ image_url }, index) => {
+        return new Promise((res) => {
+          setTimeout(() => {
+            res(setImage(image_url, index))
+            if (index === 0) {
+              addStack(stack)
+            }
+          }, index * loadingTime)
+        })
       })
       const imageList = await Promise.all(loadPromises)
       if (imageList.some((image) => typeof image === 'string')) {
         const err = new Error("getAllImage Error, can't get Image")
-        console.error(err)
-
         throw err
       }
     } catch (error) {
       const err = error instanceof Error ? error.message : 'new Error'
-      throw error
+      throw new Error(err)
     }
   }
   const clearIDB = () => {
@@ -146,6 +161,10 @@ function WorkerIDBApp() {
       })
   }
 
+  const handleNext = () => (imagesUrl.length === 0
+    ? 0
+    : setImageIndex(imageIndex + 1))
+
   useLayoutEffect(() => {
     clearIDB()
   }, [])
@@ -153,8 +172,13 @@ function WorkerIDBApp() {
   useEffect(() => {
     console.clear()
     console.log('-----------------------')
+    const element = elementRef.current as HTMLElement
+    cornerstone.enable(element)
+
     getDicomList(workerList)
-      .then((dicomList) => getAllImage(dicomList))
+      .then((dicomList) => {
+        getAllImage(dicomList)
+      })
       .catch((err) => {
         console.error('getAllImage---', err)
       })
@@ -162,9 +186,46 @@ function WorkerIDBApp() {
     return clearIDB()
   }, [])
 
+  const getIDBImageAndDispaly = async (imageUrl: string) => {
+    try {
+      const byteArray = await localforage.getItem(imageUrl) as Uint8Array
+      const image = await loadByteArrayImage(byteArray, imageUrl).promise
+      console.log('byteArray---', byteArray, image)
+      displayImage(image)
+    } catch (error) {
+      cornerstone.loadImage(`${imageUrl}`)
+        .then((image) => {
+          displayImage(image)
+        })
+    }
+  }
+
+  // useEffect(() => {
+  //   if (imagesUrl.length === 0) return
+  //   // cornerstone.loadImage(images[imageIndex])
+  //   //   .then((image) => displayImage(image))
+  //   //   .catch((err) => console.error('err--', err))
+  //   getIDBImageAndDispaly(imagesUrl[imageIndex])
+  // }, [imageIndex])
+
   return (
     <div>
-      <h2>cornerStone:</h2>
+      <h2>cornerStone: {imageIndex + 1}
+        <br />
+      </h2>
+      <form>
+        <input
+          type="range"
+          min={0}
+          max={rangeMax}
+          ref={rangeRef}
+          defaultValue={imageIndex}
+          onChange={(ev) => {
+            setImageIndex(Number(ev.target.value))
+          }}
+        />
+        <button type="button" onClick={handleNext}>next</button>
+      </form>
       <div
         className="viewportElement"
         ref={elementRef}
@@ -173,7 +234,10 @@ function WorkerIDBApp() {
           height: '514px',
         }}
       >
-        <canvas ref={canvasRef} className="cornerstone-canvas" />
+        <canvas
+          ref={canvasRef}
+          className="cornerstone-canvas"
+        />
       </div>
     </div>
   )

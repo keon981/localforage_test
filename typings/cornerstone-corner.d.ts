@@ -1,8 +1,3 @@
-declare module 'cornerstone-core' {
-  const content: any
-  export = content
-}
-
 declare module 'cornerstone-web-image-loader' {
   const content: any
   export = content
