@@ -1,8 +1,8 @@
 /* eslint-disable max-len */
 /* eslint-disable no-plusplus */
-import { Image } from 'cornerstone-core'
 import dicomParser from 'dicom-parser'
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const api = 'https://dev.label.efai.tw/api/viewer'
 
 type TypeArray = Uint8Array | Int8Array | Uint16Array | Int16Array | Uint32Array | Int32Array | Float32Array | Float64Array | Uint8ClampedArray
@@ -102,7 +102,7 @@ const createImageObject = (dataSet: dicomParser.DataSet, imageUrl: string) => {
   const PixelArrayType = getPixelArrayType(bitsAllocated, pixelRepresentation)
   const defaultPixelData = new PixelArrayType(buffer, dataOffset)
   const colorPixelData = getColorPixelData(defaultPixelData)
-  const pixelData = isColor ? getColorPixelData(defaultPixelData) : defaultPixelData
+  const pixelData = isColor ? colorPixelData : defaultPixelData
   const getPixelData = () => pixelData
   const sizeInBytes = rows * columns * samplesPerPixel
 
