@@ -29,20 +29,12 @@ cornerstoneTools.external.Hammer = Hammer
 cornerstoneTools.external.cornerstone = cornerstone
 cornerstoneTools.external.cornerstoneMath = cornerstoneMath
 
-const workerList = 87760
-const loadingTime = 50
+const workerList = import.meta.env.VITE_workerList
+const loadingTime = import.meta.env.VITE_loadingTime
+const imageCacheSize = import.meta.env.VITE_imageCacheSize
 
-type Image = cornerstone.Image & {
-  data?: any
-  imageFrame?: any
-}
-type PromiseArray<T> = Promise<T>[]
-type Stack = {
-  currentImageIdIndex: number;
-  imageIds: string[];
-}
 // save image worker
-cornerstone.imageCache.setMaximumSizeBytes(2 * 2000 * 1024 * 1024)
+cornerstone.imageCache.setMaximumSizeBytes(imageCacheSize * 1024 * 1024)
 
 function WorkerIDBApp() {
   const rangeRef = useRef<HTMLInputElement>(null)
@@ -50,7 +42,6 @@ function WorkerIDBApp() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [imageIndex, setImageIndex] = useState<number>(0)
   const [imagesUrl, setImagesUrl] = useState<string[]>([])
-  cornerstone.imageCache.setMaximumSizeBytes(20 * 1024 * 1024 * 1024)
   const rangeMax = imagesUrl.length - 1
 
   const getDicomList = async (id: string | number): Promise<Dicom[]> => {
@@ -74,7 +65,6 @@ function WorkerIDBApp() {
 
   const displayImage = async (image: Image | cornerstone.Image) => {
     const element = elementRef.current as HTMLElement
-    console.log('displayImage---', element)
     cornerstone.displayImage(element, image)
     cornerstone.updateImage(element)
   }
@@ -114,7 +104,6 @@ function WorkerIDBApp() {
 
   const addStack = (stack: Stack, element: HTMLElement) => {
     // const element = elementRef.current as HTMLElement
-    console.log('addStack---', element)
     cornerstoneTools.addStackStateManager(element, ['stack'])
     cornerstoneTools.addToolState(element, 'stack', stack)
   }
@@ -122,8 +111,12 @@ function WorkerIDBApp() {
   const setImage = async (imageUrl: string, index: number): Promise<Image | string> => {
     try {
       const image = await cornerstone.loadImage(`wadouri:${imageUrl}`) as Image
+      if (index === 0) {
+        console.log('image---', image)
+
+        displayImage(image)
+      }
       const { byteArray } = image.data
-      if (index === 0) displayImage(image)
       await saveImageToIDB(imageUrl, byteArray)
       return image
     } catch (error) {
@@ -131,23 +124,26 @@ function WorkerIDBApp() {
     }
   }
 
-  const getAllImage = async (dicomList: Dicom[], element: HTMLElement): Promise<void> => {
+  const preloadAllImage = async (dicomList: Dicom[], element: HTMLElement): Promise<void> => {
+    // 預先下載所有圖片到 indexedDB
     if (!dicomList.length) throw new Error('undefine DICOM')
-    const imageIds = imageIdList(dicomList)()
+    const imageIds = imageIdList(dicomList)
+    const schemeImageIds = imageIds(true)
     try {
       const stack: Stack = {
         currentImageIdIndex: 0,
-        imageIds: dicomList.map(({ image_url }) => `wadouri:${image_url}`),
+        imageIds: schemeImageIds,
       }
-      // addStack(stack, element)
-      setImagesUrl(imageIds)
-      const loadPromises: PromiseArray<Image | string> = dicomList.map(({ image_url }, index) => {
-        return new Promise((res) => {
-          setTimeout(() => {
-            res(setImage(image_url, index))
-          }, index * loadingTime)
+      addStack(stack, element)
+      setImagesUrl(imageIds())
+      const loadPromises: PromiseArray<Image | string> = dicomList
+        .map(({ image_url }, index) => {
+          return new Promise((res) => {
+            setTimeout(() => {
+              res(setImage(image_url, index))
+            }, index * loadingTime)
+          })
         })
-      })
       const imageList = await Promise.all(loadPromises)
       if (imageList.some((image) => typeof image === 'string')) {
         const err = new Error("getAllImage Error, can't get Image")
@@ -159,12 +155,11 @@ function WorkerIDBApp() {
     }
   }
 
-  const preloadAllImage = async (dicomList: Dicom[], element: HTMLElement): Promise<void> => {
+  const stackAllImage = async (dicomList: Dicom[], element: HTMLElement): Promise<void> => {
+    // 滾動時才下載圖片
     if (!dicomList.length) throw new Error('undefine DICOM')
     const imageIds = imageIdList(dicomList)
     const schemeImageIds = imageIds(true)
-    console.log(schemeImageIds)
-
     try {
       const stack: Stack = {
         currentImageIdIndex: 0,
@@ -181,26 +176,6 @@ function WorkerIDBApp() {
     }
   }
 
-  const newloadAll = (dicomList: Dicom[], element: HTMLElement): void => {
-    if (!dicomList.length) throw new Error('undefine DICOM')
-    const imageIds = imageIdList(dicomList)
-    const schemeImageIds = imageIds(true)
-    const stack: Stack = {
-      currentImageIdIndex: 0,
-      imageIds: schemeImageIds,
-    }
-    cornerstone.loadImage(schemeImageIds[0])
-      .then((image) => {
-        displayImage(image)
-        addStack(stack, element)
-        setImagesUrl(imageIds())
-      })
-      .catch((error) => {
-        const err = error instanceof Error ? error.message : 'new Error'
-        console.log(error)
-      })
-  }
-
   const clearIDB = () => {
     localforage.clear()
       .then(() => {
@@ -210,8 +185,12 @@ function WorkerIDBApp() {
       })
   }
 
+  const handlePrev = () => (imageIndex <= 0
+    ? setImageIndex(0)
+    : setImageIndex(imageIndex - 1))
+
   const handleNext = () => (imagesUrl.length === 0
-    ? 0
+    ? setImageIndex(0)
     : setImageIndex(imageIndex + 1))
 
   useLayoutEffect(() => {
@@ -225,10 +204,18 @@ function WorkerIDBApp() {
 
     const element = elementRef.current as HTMLElement
     cornerstone.enable(element)
-    cornerstoneTools.init()
+    cornerstoneTools.init([
+      {
+        moduleName: 'segmentation',
+        configuration: {
+          minRadius: 8,
+          maxRadius: 150,
+        },
+      },
+    ])
     getDicomList(workerList)
       .then((dicomList) => {
-        getAllImage(dicomList, element)
+        preloadAllImage(dicomList, element)
         addTool()
       })
       .catch((err) => {
@@ -242,8 +229,6 @@ function WorkerIDBApp() {
     try {
       const byteArray = await localforage.getItem(imageUrl) as Uint8Array
       if (byteArray) {
-        console.log('byteArray---', byteArray)
-
         const image = await loadByteArrayImage(byteArray, imageUrl).promise
         displayImage(image)
       } else {
@@ -254,29 +239,23 @@ function WorkerIDBApp() {
       }
     } catch (error) {
       console.error('error---', error)
-
-      cornerstone.loadAndCacheImage(`${imageUrl}`)
-        .then((image) => {
-          displayImage(image)
-        })
-        .catch((err) => {
-          console.error(err)
-        })
     }
   }
 
   useEffect(() => {
     if (imagesUrl.length === 0) return
-    // cornerstone.loadImage(images[imageIndex])
-    //   .then((image) => displayImage(image))
-    //   .catch((err) => console.error('err--', err))
-    getIDBImageAndDispaly(imagesUrl[imageIndex])
+    cornerstone
+      .loadImage(`wadouri:${imagesUrl[imageIndex]}`)
+      .then((image) => {
+        displayImage(image)
+        console.log(image)
+      })
+      .catch((err) => {
+        console.error(err)
+      })
   }, [imageIndex])
 
-  // const cacheInfo = cornerstone.imageCache.getCacheInfo()
-  // useEffect(() => {
-  //   console.log(cacheInfo)
-  // }, [cacheInfo])
+  const cacheInfo = cornerstone.imageCache.getCacheInfo()
 
   return (
     <div>
@@ -295,16 +274,28 @@ function WorkerIDBApp() {
           }}
         />
       </form>
-      <button
-        type="button"
-        onClick={handleNext}
-      >
-        next
-      </button>
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+        <button type="button" onClick={handlePrev}>
+          prev
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            console.log(cacheInfo)
+          }}
+        >
+          log cacheInfo
+        </button>
+        <button type="button" onClick={handleNext}>
+          next
+        </button>
+      </div>
+
       <div
         className="viewportElement"
         ref={elementRef}
         style={{
+          marginTop: '1rem',
           width: '514px',
           height: '514px',
         }}
