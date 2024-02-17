@@ -3,7 +3,7 @@ import {
   composeSeriesData, fetchDicomInstances, fetchProjectInfo, composeDicomList, getUserToken,
 } from 'src/utils/API'
 
-export const getDicomList = async (id: string | number): Promise<Dicom[]> => {
+export const getAllDicomList = async (id: string | number): Promise<Dicom[]> => {
   try {
     const { token } = await getUserToken()
     const info = await fetchProjectInfo(token, id)

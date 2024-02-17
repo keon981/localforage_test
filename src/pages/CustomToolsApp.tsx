@@ -13,9 +13,10 @@ import Hammer from 'hammerjs'
 import dicomParser from 'dicom-parser'
 import type { Dicom } from 'src/utils/API'
 import localforage from 'localforage'
-import { getDicomList } from 'src/utils'
+import { getAllDicomList } from 'src/utils'
 import { loadByteArrayImage } from 'src/utils/getImageFrame'
 import { saveImageToIDB } from 'src/utils/IDB'
+import MyStackScrollTool from 'src/utils/tools/customStackScrollTool'
 
 cornerstoneWebImageLoader.external.cornerstone = cornerstone
 cornerstoneWebImageLoader.external.cornerstoneMath = cornerstoneMath
@@ -29,10 +30,6 @@ cornerstoneTools.external.cornerstoneMath = cornerstoneMath
 const workerList = import.meta.env.VITE_workerList
 const loadingTime = import.meta.env.VITE_loadingTime
 // const imageCacheSize = import.meta.env.VITE_imageCacheSize
-
-// Cornerstonejs
-const scrollToIndex = cornerstoneTools.import('util/scrollToIndex')
-const scroll = cornerstoneTools.importInternal('util/scroll')
 
 // save image worker
 // cornerstone.imageCache.setMaximumSizeBytes(imageCacheSize * 1024 * 1024)
@@ -60,9 +57,9 @@ function CustomToolsApp() {
   }
 
   const addTool = () => {
-    const { StackScrollMouseWheelTool } = cornerstoneTools
-    cornerstoneTools.addTool(StackScrollMouseWheelTool)
-    cornerstoneTools.setToolActive('StackScrollMouseWheel', {})
+    // const { StackScrollMouseWheelTool } = cornerstoneTools
+    cornerstoneTools.addTool(MyStackScrollTool, { name: 'MyStackScrollTool' })
+    cornerstoneTools.setToolActive('MyStackScrollTool', {})
   }
 
   const addStack = (stack: Stack, element: HTMLElement) => {
@@ -74,8 +71,10 @@ function CustomToolsApp() {
   const setImage = async (imageUrl: string, index: number): Promise<Image | string> => {
     try {
       const image = await cornerstone.loadImage(`wadouri:${imageUrl}`) as Image
-      if (index === 0) displayImage(image)
       const { byteArray } = image.data
+      if (index === 0) {
+        displayImage(image)
+      }
       await saveImageToIDB(imageUrl, byteArray)
       return image
     } catch (error) {
@@ -98,21 +97,18 @@ function CustomToolsApp() {
       addStack(stack, element)
       setImagesUrl(imageIds())
 
-      const loadPromises: PromiseArray<Image | string> = dicomList
-        .map(({ image_url }, index) => {
-          return new Promise((resolve) => {
-            setTimeout(() => {
-              resolve(setImage(image_url, index))
-            }, index * loadingTime)
-          })
-        })
+      const imageList: (string | Image)[] = []
 
-      const imageList = await Promise.all(loadPromises)
-      if (imageList.some((image) => typeof image === 'string')) {
-        const err = new Error("getAllImage Error, can't get Image")
-        throw err
-      }
+      dicomList.forEach(({ image_url }, index) => {
+        setTimeout(() => {
+          setImage(image_url, index)
+            .then((res) => imageList.push(res))
+        }, index * loadingTime)
+      })
+      console.log(imageList)
     } catch (error) {
+      console.log(error)
+
       const err = error instanceof Error ? error.message : 'new Error'
       throw new Error(err)
     }
@@ -126,14 +122,6 @@ function CustomToolsApp() {
         console.log(err)
       })
   }
-
-  const handlePrev = () => (imageIndex <= 0
-    ? setImageIndex(0)
-    : setImageIndex(imageIndex - 1))
-
-  const handleNext = () => (imagesUrl.length === 0
-    ? setImageIndex(0)
-    : setImageIndex(imageIndex + 1))
 
   const getIDBImageAndDispaly = async (imageUrl: string) => {
     try {
@@ -152,17 +140,16 @@ function CustomToolsApp() {
     }
   }
 
-  useLayoutEffect(() => {
-    clearIDB()
-  }, [])
+  const renderDicom = (dicomList: Dicom[]) => {
+    const element = elementRef.current as HTMLElement
+    cornerstone.enable(element)
+    console.log('dicomList---', dicomList)
+    preloadAllImage(dicomList, element)
+    addTool()
+  }
 
   useEffect(() => {
     console.clear()
-    const cacheInfo = cornerstone.imageCache.getCacheInfo()
-    console.log(cacheInfo)
-
-    const element = elementRef.current as HTMLElement
-    cornerstone.enable(element)
     cornerstoneTools.init([
       {
         moduleName: 'segmentation',
@@ -172,22 +159,19 @@ function CustomToolsApp() {
         },
       },
     ])
-    getDicomList(workerList)
+    getAllDicomList(workerList)
       .then((dicomList) => {
-        preloadAllImage(dicomList, element)
-        addTool()
+        /*
+          1. 取得全部dicomList
+          2. 如果 IDB 沒有儲存的話，就一邊 preload 一邊儲存
+          3. 如果 IDB
+        */
+        renderDicom(dicomList)
       })
       .catch((err) => {
         console.error('getAllImage---', err)
       })
-
-    return clearIDB()
   }, [])
-
-  useEffect(() => {
-    if (imagesUrl.length === 0) return
-    getIDBImageAndDispaly(imagesUrl[imageIndex])
-  }, [imageIndex])
 
   return (
     <div>
@@ -202,28 +186,33 @@ function CustomToolsApp() {
           ref={rangeRef}
           defaultValue={imageIndex}
           onChange={(ev) => {
-            setImageIndex(Number(ev.target.value))
+            const num = Number(ev.target.value)
           }}
         // disabled
         />
       </form>
-      <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
-        <button type="button" onClick={handlePrev}>
-          prev
-        </button>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        gap: '1rem',
+        marginBottom: '1.5rem',
+      }}
+      >
         <button
           type="button"
           onClick={() => {
             const cacheInfo = cornerstone.imageCache.getCacheInfo()
-            console.log(cacheInfo, imagesUrl)
+            localforage.key(2)
+              .then((res) => {
+                console.log('key---', res)
+              })
+              .catch((res) => {
+                console.error('key error---', res)
+              })
           }}
         >
           log cacheInfo
         </button>
-        <button type="button" onClick={handleNext}>
-          next
-        </button>
-
       </div>
       <div
         className="viewportElement"

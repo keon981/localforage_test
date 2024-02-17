@@ -25,8 +25,9 @@ export const saveBase64ToDB = async (imageUrl: string, byteArray: Uint8Array) =>
 }
 
 export const saveImageToIDB = async (imageUrl: string, byteArray: Uint8Array) => {
+  const arrayBuffer = byteArray.buffer
   try {
-    await localforage.setItem(imageUrl, byteArray)
+    await localforage.setItem(imageUrl, arrayBuffer)
   } catch (error) {
     console.error('saveImageToIDB--- error', error)
   }
